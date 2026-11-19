@@ -23,10 +23,12 @@ function App() {
   const [generating, setGenerating] = useState(false);
   const [progress, setProgress] = useState('ИИ ещё не загружен');
   const [error, setError] = useState('');
+  const [copiedId, setCopiedId] = useState(null);
 
   const engineRef = useRef(null);
   const loadingPromiseRef = useRef(null);
   const bottomRef = useRef(null);
+  const stopRef = useRef(false);
 
   const activeChat = chats.find(chat => chat.id === activeId);
   const messages = activeChat?.messages || [];
@@ -51,11 +53,7 @@ function App() {
         );
       }
 
-      return [{
-        id,
-        title,
-        messages: newMessages
-      }, ...previous];
+      return [{ id, title, messages: newMessages }, ...previous];
     });
   }
 
@@ -70,7 +68,7 @@ function App() {
     loadingPromiseRef.current = (async () => {
       try {
         const engine = await CreateMLCEngine(MODEL, {
-          initProgressCallback: (report) => {
+          initProgressCallback: report => {
             setProgress(report.text || 'загружаем модель...');
           }
         });
@@ -112,11 +110,14 @@ function App() {
     setMessage('');
     setError('');
     setGenerating(true);
+    stopRef.current = false;
 
     updateChat(id, updatedMessages, text.slice(0, 28));
 
     try {
       const engine = await loadModel();
+
+      if (stopRef.current) return;
 
       setProgress('ИИ думает...');
 
@@ -141,25 +142,51 @@ function App() {
         response.choices?.[0]?.message?.content ||
         'не получилось получить ответ. попробуй ещё раз.';
 
-      const assistantMessage = {
-        id: Date.now() + 1,
-        role: 'assistant',
-        text: answer
-      };
+      if (!stopRef.current) {
+        const assistantMessage = {
+          id: Date.now() + 1,
+          role: 'assistant',
+          text: answer
+        };
 
-      updateChat(id, [...updatedMessages, assistantMessage], text.slice(0, 28));
-      setProgress('ИИ готов к работе');
+        updateChat(id, [...updatedMessages, assistantMessage], text.slice(0, 28));
+      }
+
+      setProgress(stopRef.current ? 'генерация остановлена' : 'ИИ готов к работе');
 
     } catch (err) {
       console.error(err);
       setError('ошибка: ' + err.message);
-      setProgress('попробуй загрузить ИИ ещё раз');
+      setProgress('попробуй ещё раз');
     } finally {
       setGenerating(false);
+      stopRef.current = false;
+    }
+  }
+
+  function stopGeneration() {
+    stopRef.current = true;
+    try {
+      engineRef.current?.interruptGenerate();
+    } catch (err) {
+      console.warn(err);
+    }
+    setGenerating(false);
+    setProgress('генерация остановлена');
+  }
+
+  async function copyMessage(item) {
+    try {
+      await navigator.clipboard.writeText(item.text);
+      setCopiedId(item.id);
+      setTimeout(() => setCopiedId(null), 1800);
+    } catch {
+      setError('не удалось скопировать сообщение');
     }
   }
 
   function newChat() {
+    if (generating) stopGeneration();
     setActiveId(null);
     setMessage('');
     setSidebarOpen(false);
@@ -251,7 +278,15 @@ function App() {
                   <div className="avatar">
                     {item.role === 'user' ? 'Я' : '✦'}
                   </div>
-                  <div className="bubble">{item.text}</div>
+                  <div className="bubble">
+                    {item.text}
+                    <button
+                      className="copy-btn"
+                      onClick={() => copyMessage(item)}
+                    >
+                      {copiedId === item.id ? 'скопировано ✓' : 'копировать'}
+                    </button>
+                  </div>
                 </div>
               ))}
 
@@ -279,12 +314,15 @@ function App() {
               disabled={generating}
             />
 
-            <button
-              type="submit"
-              disabled={!message.trim() || generating}
-            >
-              ➤
-            </button>
+            {generating ? (
+              <button type="button" onClick={stopGeneration}>
+                ■
+              </button>
+            ) : (
+              <button type="submit" disabled={!message.trim()}>
+                ➤
+              </button>
+            )}
           </form>
 
           <p className="disclaimer">
