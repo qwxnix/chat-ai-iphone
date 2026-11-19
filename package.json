@@ -1,3 +1,4 @@
+
 {
   "name": "chat-gpt-iphone-pwa",
   "version": "1.0.0",
@@ -9,6 +10,7 @@
     "preview": "vite preview --host 0.0.0.0"
   },
   "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.89",
     "vite": "^6.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
